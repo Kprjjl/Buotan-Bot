@@ -26,7 +26,7 @@ for file_name in os.listdir('./cogs'):
         print(f'Loaded {file_name}')
 
 
-def main(name):
+def main():
     @bot.event
     async def on_ready():
         print("Bot is ready.")
@@ -54,4 +54,4 @@ def main(name):
 
 
 if __name__ == '__main__':
-    main('PyCharm')
+    main()
