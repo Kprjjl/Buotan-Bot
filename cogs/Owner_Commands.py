@@ -1,10 +1,16 @@
 import discord
 import asyncio
 from discord.ext import commands
+extension_error_msgs = {
+    1: lambda extension: f"'{extension}' cog not found.",
+    2: lambda extension: f"'{extension}' cog not loaded.",
+    3: lambda extension: f"'{extension}' has not setup fxn.",
+    4: lambda extension: f"'{extension}''s setup fxn had an execution error."
+}
 
 
 class OwnerCommands(commands.Cog):
-    def __init__self(self, bot):
+    def __init__(self, bot):
         self.bot = bot
 
     @commands.command()
@@ -14,20 +20,56 @@ class OwnerCommands(commands.Cog):
             pf.write(f'{prefix}')
             await ctx.send(f'Prefix changed to: {prefix}')
 
+    def extension_cmds(self, cmd, extension):
+        try:
+            if cmd == "reload":
+                self.bot.reload_extension(f'cogs.{extension}')
+            elif cmd == "unload":
+                self.bot.unload_extension(f'cogs.{extension}')
+            elif cmd == "load":
+                self.bot.load_extension(f'cogs.{extension}')
+        except commands.ExtensionNotFound:
+            return extension_error_msgs[1](extension)
+        except commands.ExtensionNotLoaded:
+            return extension_error_msgs[2](extension)
+        except commands.NoEntryPointError:
+            return extension_error_msgs[3](extension)
+        except commands.ExtensionFailed:
+            return extension_error_msgs[4](extension)
+        except Exception as e:
+            print(f"extension_cmds error: {e}")
+        else:
+            return 0
+
     @commands.command()
     @commands.is_owner()
     async def load(self, ctx, *, extension):
-        self.bot.load_extension(f'cogs.{extension}')
-        print(f'Loaded {extension}.')
+        result = self.extension_cmds("load", extension)
+        if result == 0:
+            await ctx.send(f'Loaded {extension}.')
+        else:
+            await ctx.send(result)
 
     @commands.command()
     @commands.is_owner()
     async def unload(self, ctx, *, extension):
-        if extension != "Owner Commands":
-            self.bot.unload_extension(f'cogs.{extension}')
-            print(f'Unloaded {extension}.')
+        if extension != "Owner_Commands":
+            result = self.extension_cmds("unload", extension)
+            if result == 0:
+                await ctx.send(f'Unloaded {extension}.')
+            else:
+                await ctx.send(result)
         else:
             await ctx.send("Owner Commands should not be unloaded.")
+
+    @commands.command()
+    @commands.is_owner()
+    async def reload(self, ctx, *, extension):
+        result = self.extension_cmds("reload", extension)
+        if result == 0:
+            await ctx.send(f"Reloaded {extension}.")
+        else:
+            await ctx.send(result)
 
     @commands.command(name="bot_act")
     @commands.is_owner()

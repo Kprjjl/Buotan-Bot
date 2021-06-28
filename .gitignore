@@ -1,3 +1,4 @@
 # Discord bot token
 token
 prefix
+cogs/__pycache__/
