@@ -15,10 +15,14 @@ pomo_channel_regex = ["^(\d+)-(\d+)-(\d+) \((\d+)\/(\d+)\) (w|b|B) \|{2} (\d+)m 
 class Study(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
         self.ongoing = []
         self.pomo_ctg = None
         self.pomo_channels = []
 
+        self.remind_list = {}
+
+    # -------- pomodoro stuff ----------
     @staticmethod
     def pomo_configs(name):  # returns (list, int) or False
         if configs := re.findall(pomo_channel_regex[0], name):
@@ -106,10 +110,13 @@ class Study(commands.Cog):
                 await asyncio.sleep(1)
 
     @commands.command()
-    async def startstudy(self, ctx):
-        if self.ongoing is True:
+    async def startpomos(self, ctx):
+        if self.ongoing:
             return await ctx.send("Study sessions have already started.")
         else:
+            if self.pomo_update.is_running():  # for restarting
+                self.pomo_update.cancel()
+
             self.pomo_ctg = discord.utils.get(ctx.guild.categories, name="POMODOROS")
             if self.pomo_ctg is None:
                 return await ctx.send("No category channel named 'POMODOROS' found.")
@@ -123,7 +130,23 @@ class Study(commands.Cog):
             await ctx.send("Pomodoros Started")
 
     @commands.command()
-    async def restartstudy(self, ctx):
+    async def restartpomos(self, ctx):
+        self.ongoing = []
+        self.pomo_channels = []
+        await self.startpomos()
+
+    @commands.command()
+    async def stoppomos(self, ctx):
+        if self.pomo_update.is_running():
+            self.pomo_update.cancel()
+            await ctx.send("Pomodoro timers have been cancelled.")
+        else:
+            await ctx.send("Timers are already stopped.")
+    # ---------------------------
+
+    # ---------- mini reminder ----------
+    @commands.command()
+    async def objective(self, ctx, *, obj):
         pass
 
 
