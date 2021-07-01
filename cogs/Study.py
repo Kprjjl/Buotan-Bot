@@ -10,8 +10,6 @@ import datetime as dt
 # <state> values: "w" for work, "b" for short break, "B" for interval break
 pomo_channel_regex = ["^(\d+)-(\d+)-(\d+) \((\d+)\/(\d+)\) (w|b|B) \|{2} (\d+)m 0s$",
                       "^(\d+)-(\d+) (w|b) \|{2} (\d+)m 0s$"]
-
-
 # regex matches would be size 7 or 4
 
 
@@ -112,6 +110,7 @@ class Study(commands.Cog):
 
                 await ch.edit(name=new_name)
                 await asyncio.sleep(1)
+                # todo: play an alarm every <state> change
 
     @commands.command()
     async def startpomos(self, ctx):
@@ -146,7 +145,6 @@ class Study(commands.Cog):
             await ctx.send("Pomodoro timers have been cancelled.")
         else:
             await ctx.send("Timers are already stopped.")
-
     # ---------------------------
 
     # ---------- mini reminder ----------
@@ -185,9 +183,6 @@ class Study(commands.Cog):
                 else:
                     prev = current
 
-            # allocated_time = dt.timedelta(hours=time_d.get('h', 0), minutes=time_d.get('m', 0))
-
-            # self.remind_list[ctx.author] = (obj, allocated_time, dt.datetime.now())
             self.remind_list[ctx.author] = (obj, time_d, dt.datetime.now())
             if not self.remind_objective.is_running():
                 self.remind_objective.start()
@@ -205,6 +200,7 @@ class Study(commands.Cog):
 
         if not self.remind_list:
             return self.remind_objective.cancel()
+    # -----------------------------------
 
 
 def setup(bot):
