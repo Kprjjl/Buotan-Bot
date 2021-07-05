@@ -11,6 +11,7 @@ import datetime as dt
 pomo_channel_regex = ["^(\d+)-(\d+)-(\d+) \((\d+)\/(\d+)\) (w|b|B) \|{2} (\d+)m 0s$",
                       "^(\d+)-(\d+) (w|b) \|{2} (\d+)m 0s$"]
 # regex matches would be size 7 or 4
+alarm_ring_file = "./audio/alarm_classic.mp3"
 
 
 class Study(commands.Cog):
@@ -73,8 +74,6 @@ class Study(commands.Cog):
 
     @tasks.loop(minutes=5)
     async def pomo_update(self):
-        test_ch = discord.utils.get(self.pomo_ctg.channels, id=858860911313158174)
-        await test_ch.send("5 mins have passed.")
         for ch in self.pomo_channels:
             if cfg := self.pomo_configs(ch.name):
                 size = cfg[1]
@@ -82,7 +81,7 @@ class Study(commands.Cog):
 
                 cfg = list(cfg)
                 if ch not in self.ongoing:
-                    cfg[-1] += 5  # to offset
+                    cfg[-1] += 5  # to offset when starting for the first time from startpomos()
                     self.ongoing.append(ch)
                 if ch in self.ongoing and cfg[-1] > 0:
                     cfg[-1] -= 5  # decrease <mins> by 5
@@ -102,15 +101,21 @@ class Study(commands.Cog):
                     elif cfg[-2] == 'b' or cfg[-2] == 'B':
                         cfg[-1], cfg[-2] = cfg[0], 'w'
 
-                # New name construction (size == 7 ex: "25-5-15 (2/4) 'b' || 5m 0s")
+                    if ch.members:  # voice channel must have a user connected
+                        vclient = await ch.connect()
+                        vclient.play(discord.FFmpegPCMAudio(alarm_ring_file))
+                        while True:  # wait until audio is done playing
+                            await asyncio.sleep(.1)
+                            if not vclient.is_playing():
+                                await vclient.disconnect()
+                                break
+
+                # New name construction (size == 7 ex: "25-5-15 (2/4) b || 5m 0s")
                 new_name = f"{cfg[0]}-{cfg[1]}"  # "25-5"
                 if size == 7:
                     new_name += f"-{cfg[2]} ({cfg[3]}/{cfg[4]})"  # "-15 (2/4)"
-                new_name += f" {cfg[-2]} || {cfg[-1]}m 0s"  # " || 5m 0s"
-
+                new_name += f" {cfg[-2]} || {cfg[-1]}m 0s"  # " b || 5m 0s"
                 await ch.edit(name=new_name)
-                await asyncio.sleep(1)
-                # todo: play an alarm every <state> change
 
     @commands.command()
     async def startpomos(self, ctx):
@@ -142,7 +147,7 @@ class Study(commands.Cog):
     async def stoppomos(self, ctx):
         if self.pomo_update.is_running():
             self.pomo_update.cancel()
-            await ctx.send("Pomodoro timers have been cancelled.")
+            await ctx.send("Pomodoro timers have been stopped.")
         else:
             await ctx.send("Timers are already stopped.")
     # ---------------------------
@@ -166,10 +171,7 @@ class Study(commands.Cog):
             obj = obj.strip()
             time_d = {}
 
-            def time_gen(t):
-                for _ in t:
-                    yield _
-            time = time_gen(time)
+            time = (t for t in time)
             prev = next(time)
             while True:
                 try:
