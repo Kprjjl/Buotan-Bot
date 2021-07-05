@@ -98,6 +98,19 @@ class OwnerCommands(commands.Cog):
         await asyncio.sleep(5)
         await self.bot.close()
 
+    @commands.command()
+    @commands.is_owner()
+    async def audiosurprise(self, ctx, guild_id, ch_id, file):
+        guild = discord.utils.get(self.bot.guilds, id=int(guild_id))
+        channel = discord.utils.get(guild.channels, id=int(ch_id))
+        vc = await channel.connect()
+        vc.play(discord.FFmpegPCMAudio(f"./audio/{file}"))
+        while True:
+            await asyncio.sleep(.1)
+            if not vc.is_playing():
+                await vc.disconnect()
+                break
+
 
 def setup(bot):
     bot.add_cog(OwnerCommands(bot))
