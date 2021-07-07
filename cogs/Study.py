@@ -14,6 +14,67 @@ pomo_channel_regex = ["^(\d+)-(\d+)-(\d+) \((\d+)\/(\d+)\) (w|b|B) \|{2} (\d+)m 
 alarm_ring_file = "./audio/alarm_classic.mp3"
 
 
+class PomoConfig:
+    def __init__(self, ch_name):
+        configs, self.size = self.get_configs(ch_name)
+
+        if self.size == 7:
+            # state_position = 5
+            self.worktime, self.shortbreak, self.longbreak, self.numpomo, self.maxpomo, \
+                self.state, self.timeleft = configs
+        elif self.size == 4:
+            # state_position = 2
+            self.worktime, self.shortbreak, \
+                self.state, self.timeleft = configs
+
+    @staticmethod
+    def get_configs(ch_name):  # returns (list, int)
+        if configs := re.findall(pomo_channel_regex[0], ch_name):
+            configs = configs[0]
+            size = 7
+            state_position = 5
+        elif configs := re.findall(pomo_channel_regex[1], ch_name):
+            configs = configs[0]
+            size = 4
+            state_position = 2
+            if configs[2] == 'B':
+                raise ValueError  # size 4 configs do not include a long break state
+        else:
+            raise ValueError  # wrong format
+        configs = [int(configs[i]) if i != state_position else configs[i] for i in range(size)]
+
+        # time numbers should be divisible by 5
+        if size == 7:
+            for i in range(size):
+                if i in [3, 4, 5]:  # exclude <interval progress>,<max interval>,<state>
+                    continue
+                elif configs[i] % 5 == 0:
+                    continue
+                raise ValueError
+        elif size == 4:
+            for i in range(size):
+                if i == 2:  # exclude <state>
+                    continue
+                elif configs[i] % 5 == 0:
+                    continue
+                raise ValueError
+
+        # <mins> should be less than or equal to corresponding time setting depending on <state>
+        if configs[-2] == 'w':
+            if configs[-1] > configs[0]:  # if <timeleft> > <work time>
+                raise ValueError
+        elif configs[-2] == 'b':
+            if configs[-1] > configs[1]:  # <short break>
+                raise ValueError
+        elif configs[-2] == 'B':
+            if configs[-1] > configs[2]:  # <long break>
+                raise ValueError
+        else:
+            raise ValueError  # incase
+
+        return configs, size
+
+
 class Study(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -26,80 +87,34 @@ class Study(commands.Cog):
         self.objective_ch = None
 
     # -------- pomodoro stuff ----------
-    @staticmethod
-    def pomo_configs(name):  # returns (list, int) or False
-        if configs := re.findall(pomo_channel_regex[0], name):
-            configs = configs[0]
-            configs = [int(configs[i]) if i != 5 else configs[i] for i in range(7)]
-            size = 7
-        elif configs := re.findall(pomo_channel_regex[1], name):
-            configs = configs[0]
-            configs = [int(configs[i]) if i != 2 else configs[i] for i in range(4)]
-            if configs[-2] == 'B':
-                return False  # size 4 configs do not include long breaks
-            size = 4
-        else:
-            return False
-
-        # time numbers should be divisible by 5
-        if size == 7:
-            for i in range(size):
-                if i in [3, 4, 5]:  # exclude <interval progress>,<max interval>,<state>
-                    continue
-                elif configs[i] % 5 == 0:
-                    continue
-                return False
-        elif size == 4:
-            for i in range(size):
-                if i == 2:  # exclude <state>
-                    continue
-                elif configs[i] % 5 == 0:
-                    continue
-                return False
-
-        # <mins> should be less than or equal to corresponding time setting depending on <state>
-        if configs[-2] == 'w':
-            if configs[-1] <= configs[0]:  # <work time>
-                return configs, size
-        elif configs[-2] == 'b':
-            if configs[-1] <= configs[1]:  # <short break>
-                return configs, size
-        elif configs[-2] == 'B':
-            if configs[-1] <= configs[2]:  # <long break>
-                return configs, size
-        else:
-            return False
-
-        return False  # channel does not fit the criteria
-
     @tasks.loop(minutes=5)
-    async def pomo_update(self):
+    async def update_pomos(self):
         for ch in self.pomo_channels:
-            if cfg := self.pomo_configs(ch.name):
-                size = cfg[1]
-                cfg = cfg[0]
-
-                cfg = list(cfg)
+            try:
+                cfg = PomoConfig(ch.name)
+            except ValueError:
+                continue
+            else:
                 if ch not in self.ongoing:
-                    cfg[-1] += 5  # to offset when starting for the first time from startpomos()
+                    cfg.timeleft += 5  # to offset when starting for the first time from startpomos()
                     self.ongoing.append(ch)
-                if ch in self.ongoing and cfg[-1] > 0:
-                    cfg[-1] -= 5  # decrease <mins> by 5
+                if ch in self.ongoing and cfg.timeleft > 0:
+                    cfg.timeleft -= 5  # decrease <mins> by 5
 
                 # change state when <mins> is zero
-                if cfg[-1] == 0:
-                    if cfg[-2] == 'w':
-                        if size == 7:  # <work-time> can go to either <short-break> or <long-break>
-                            cfg[3] += 1  # completed one pomodoro
-                            if cfg[3] < cfg[4]:
-                                cfg[-1], cfg[-2] = cfg[1], 'b'
-                            else:  # cfg[3] == cfg[4] || <interval progress> == <max interval>
-                                cfg[3] = 0  # reset
-                                cfg[-1], cfg[-2] = cfg[2], 'B'  # start long break
-                        elif size == 4:
-                            cfg[-1], cfg[-2] = cfg[1], 'b'
-                    elif cfg[-2] == 'b' or cfg[-2] == 'B':
-                        cfg[-1], cfg[-2] = cfg[0], 'w'
+                if cfg.timeleft == 0:
+                    if cfg.state == 'w':
+                        if cfg.size == 7:  # <work-time> can go to either <short-break> or <long-break>
+                            cfg.numpomo += 1  # completed one pomodoro
+                            if cfg.numpomo < cfg.maxpomo:
+                                cfg.timeleft, cfg.state = cfg.shortbreak, 'b'
+                            else:  # numpomo >= maxpomo
+                                cfg.numpomo = 0  # reset
+                                cfg.timeleft, cfg.state = cfg.longbreak, 'B'  # start long break
+                        else:
+                            cfg.timeleft, cfg.state = cfg.shortbreak, 'b'
+                    else:
+                        cfg.timeleft, cfg.state = cfg.worktime, 'w'
 
                     if ch.members:  # voice channel must have a user connected
                         vclient = await ch.connect()
@@ -111,10 +126,10 @@ class Study(commands.Cog):
                                 break
 
                 # New name construction (size == 7 ex: "25-5-15 (2/4) b || 5m 0s")
-                new_name = f"{cfg[0]}-{cfg[1]}"  # "25-5"
-                if size == 7:
-                    new_name += f"-{cfg[2]} ({cfg[3]}/{cfg[4]})"  # "-15 (2/4)"
-                new_name += f" {cfg[-2]} || {cfg[-1]}m 0s"  # " b || 5m 0s"
+                new_name = f"{cfg.worktime}-{cfg.shortbreak}"  # "25-5"
+                if cfg.size == 7:
+                    new_name += f"-{cfg.longbreak} ({cfg.numpomo}/{cfg.maxpomo})"  # "-15 (2/4)"
+                new_name += f" {cfg.state} || {cfg.timeleft}m 0s"  # " b || 5m 0s"
                 await ch.edit(name=new_name)
 
     @commands.command()
@@ -122,19 +137,22 @@ class Study(commands.Cog):
         if self.ongoing:
             return await ctx.send("Study sessions have already started.")
         else:
-            if self.pomo_update.is_running():  # for restarting
-                self.pomo_update.cancel()
+            if self.update_pomos.is_running():  # for restarting
+                self.update_pomos.cancel()
 
             self.pomo_ctg = discord.utils.get(ctx.guild.categories, name="POMODOROS")
             if self.pomo_ctg is None:
                 return await ctx.send("No category channel named 'POMODOROS' found.")
 
             for c in self.pomo_ctg.channels:
-                if self.pomo_configs(c.name):
-                    self.pomo_channels.append(c)
+                try:
+                    if PomoConfig.get_configs(c.name):
+                        self.pomo_channels.append(c)
+                except ValueError:
+                    continue
 
             # start loop
-            self.pomo_update.start()
+            self.update_pomos.start()
             await ctx.send("Pomodoros Started")
 
     @commands.command()
@@ -145,8 +163,8 @@ class Study(commands.Cog):
 
     @commands.command()
     async def stoppomos(self, ctx):
-        if self.pomo_update.is_running():
-            self.pomo_update.cancel()
+        if self.update_pomos.is_running():
+            self.update_pomos.cancel()
             await ctx.send("Pomodoro timers have been stopped.")
         else:
             await ctx.send("Timers are already stopped.")
