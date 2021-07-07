@@ -13,6 +13,11 @@ class Genshin(commands.Cog):
 
     @commands.command()
     async def resin(self, ctx, resin_count, *args):
+        """
+        Calculates how much time is required to reach resin stop points in `<args>`
+        Example:
+            `.resin 3 20 40 80 160`
+        """
         try:
             resin_count = int(resin_count)
             args = [int(a) for a in args]

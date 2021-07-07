@@ -1,9 +1,6 @@
 import os
 from discord.ext import commands
-
-with open('token', 'r') as tf:
-    line = tf.readline()
-    token = line.rstrip()
+from help import Help
 
 
 def get_prefix(bot, message):
@@ -18,7 +15,7 @@ def get_prefix(bot, message):
     return PREFIX
 
 
-bot = commands.Bot(command_prefix=get_prefix)
+bot = commands.Bot(command_prefix=get_prefix, help_command=Help())
 
 for file_name in os.listdir('./cogs'):
     if file_name.endswith('.py'):
@@ -50,6 +47,9 @@ def main():
         if isinstance(error, commands.MissingPermissions):
             await ctx.send("You do not have permission for managing messages.")
 
+    with open('token', 'r') as tf:
+        line = tf.readline()
+        token = line.rstrip()
     bot.run(token)
 
 

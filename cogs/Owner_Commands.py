@@ -100,7 +100,7 @@ class OwnerCommands(commands.Cog):
 
     @commands.command()
     @commands.is_owner()
-    async def audiosurprise(self, ctx, guild_id, ch_id, file):
+    async def audiosurprise(self, ctx, guild_id, ch_id, file):  # only made this for surprise rick rolling and other
         guild = discord.utils.get(self.bot.guilds, id=int(guild_id))
         channel = discord.utils.get(guild.channels, id=int(ch_id))
         vc = await channel.connect()

@@ -134,6 +134,16 @@ class Study(commands.Cog):
 
     @commands.command()
     async def startpomos(self, ctx):
+        """
+        Registers pomodoro channels under 'POMODORO' category and starts their timers.
+        ```
+        Pomodoro Voice Channel Name Format:
+        <worktime>-<shortbreak>[-<longbreak> (<# of pomodoros>/<max # of pomodoros>)] <state> || <timeleft>m 0s
+        ```
+        Examples of Valid Pomodoro Voice Channel Names:
+        w/ long breaks: `25-5-15 (0/4) w || 25m 0s`
+        w/o long breaks: `50-10 w || 50m 0s`
+        """
         if self.ongoing:
             return await ctx.send("Study sessions have already started.")
         else:
@@ -157,12 +167,14 @@ class Study(commands.Cog):
 
     @commands.command()
     async def restartpomos(self, ctx):
+        """Resets the bot's list of registered pomodoro channels and calls `startpomos` command"""
         self.ongoing = []
         self.pomo_channels = []
         await self.startpomos()
 
     @commands.command()
     async def stoppomos(self, ctx):
+        """Stops timers of pomodoro channels"""
         if self.update_pomos.is_running():
             self.update_pomos.cancel()
             await ctx.send("Pomodoro timers have been stopped.")
@@ -173,11 +185,19 @@ class Study(commands.Cog):
     # ---------- mini reminder ----------
     @commands.command(name="init_ob_ch")
     async def init_objective_ch(self, ctx):
+        """Registers text channel where the bot will remind objectives of `objective` command users."""
         self.objective_ch = ctx.channel
         await ctx.send(f"Objectives channel set to `{ctx.channel.name}`")
 
     @commands.command()
     async def objective(self, ctx, *, arg):
+        """
+        Registers one objective that the user is expected to finish.
+        <arg> Syntax:
+        `<objective name>` >> `<hours>hr`, `<minutes>m`
+        Example:
+            `.objective doing tasks >> 1hr 30m`
+        """
         if self.objective_ch is None:
             return await ctx.send(f"Please use `init_ob_ch` command to set objective channel")
         try:
