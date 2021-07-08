@@ -35,11 +35,15 @@ def main():
 
     @bot.command()
     async def ping(ctx):
+        """Bot Latency"""
         await ctx.send(f"Pong! {round(bot.latency * 1000)}ms")
 
     @bot.command()
     @commands.has_permissions(manage_messages=True)
     async def clear(ctx, amount=1):
+        """Clears a specified number of messages."""
+        if amount > 50:
+            return await ctx.send("Too much amount to delete.")
         await ctx.channel.purge(limit=amount + 1)
 
     @clear.error

@@ -84,7 +84,9 @@ class Study(commands.Cog):
         self.pomo_channels = []
 
         self.remind_list = {}
-        self.objective_ch = None
+        self.objective_ch = {}
+
+        self.water_ch = {}
 
     # -------- pomodoro stuff ----------
     @tasks.loop(minutes=5)
@@ -186,7 +188,7 @@ class Study(commands.Cog):
     @commands.command(name="init_ob_ch")
     async def init_objective_ch(self, ctx):
         """Registers text channel where the bot will remind objectives of `objective` command users."""
-        self.objective_ch = ctx.channel
+        self.objective_ch[ctx.guild] = ctx.channel
         await ctx.send(f"Objectives channel set to `{ctx.channel.name}`")
 
     @commands.command()
@@ -198,12 +200,16 @@ class Study(commands.Cog):
         Example:
             `.objective doing tasks >> 1hr 30m`
         """
-        if self.objective_ch is None:
+        if not self.objective_ch.get(ctx.guild):
             return await ctx.send(f"Please use `init_ob_ch` command to set objective channel")
         try:
             obj, *time = re.findall("([\w\W]+)>>\s*(\d+(hrs?|m|h))[,\s]*(\d+(hrs?|m|h))?", arg)[0]
-        except ValueError or IndexError:
-            await ctx.send("Follow `objective` >> `#hr`, `#m` format.")
+        except IndexError:
+            await ctx.send("Follow .objective `objective` >> `#hr`, `#m` format.")
+        except ValueError:
+            await ctx.send("Follow .objective `objective` >> `#hr`, `#m` format.")
+        except Exception as e:
+            print(e)
         else:
             time = [t for t in time if t]
             obj = obj.strip()
@@ -223,24 +229,58 @@ class Study(commands.Cog):
                 else:
                     prev = current
 
-            self.remind_list[ctx.author] = (obj, time_d, dt.datetime.now())
+            self.remind_list[(self.objective_ch[ctx.guild], ctx.author)] = (obj, time_d, dt.datetime.now())
             if not self.remind_objective.is_running():
                 self.remind_objective.start()
             await ctx.send(f"{ctx.author.mention} has listed an objective of `{obj}`.")
 
     @tasks.loop(minutes=1)
     async def remind_objective(self):
-        for member in self.remind_list:
-            hours = self.remind_list[member][1].get('h', 0)
-            minutes = self.remind_list[member][1].get('m', 0)
-            if dt.datetime.now() - self.remind_list[member][2] >= dt.timedelta(hours=hours, minutes=minutes):
-                await self.objective_ch.send(f"{member.mention}, it has been {hours}h, {minutes}m since "
-                                             f"you listed your objective: `{self.remind_list[member][0]}`")
-            del self.remind_list[member]
+        to_delete = []
+        for channel, member in self.remind_list:
+            hours = self.remind_list[(channel, member)][1].get('h', 0)
+            minutes = self.remind_list[(channel, member)][1].get('m', 0)
+            if dt.datetime.now() - self.remind_list[(channel, member)][2] >= dt.timedelta(hours=hours, minutes=minutes):
+                await channel.send(f"{member.mention}, it has been `{hours}h, {minutes}m` since "
+                                   f"you listed your objective: `{self.remind_list[(channel, member)][0]}`")
+        for key in to_delete:
+            del self.remind_list[key]
 
         if not self.remind_list:
             return self.remind_objective.cancel()
     # -----------------------------------
+
+    @commands.command()
+    async def init_h20_ch(self, ctx):
+        """Registers text channel where the bot will remind members to hydrate themselves."""
+        self.water_ch[ctx.guild] = ctx.channel
+        await ctx.send(f"Water ping channel set to `{ctx.channel.name}`")
+
+    @commands.command()
+    async def water(self, ctx):
+        """
+        Gives `water-ping` role.
+        Starts reminding `water-ping` members to hydrate themselves every ~1 hour.
+        """
+        if not (water_role := discord.utils.get(ctx.guild.roles, name="water-ping")):
+            water_role = await ctx.guild.create_role(name="water-ping", color=discord.Color.from_rgb(0, 204, 255))
+        await ctx.author.add_roles(water_role)
+        if not self.water_ping.is_running():
+            self.water_ping.start()
+
+    @tasks.loop(hours=1)
+    async def water_ping(self):
+        for guild in self.water_ch:
+            if water_role := discord.utils.get(guild.roles, name="water-ping"):
+                if not water_role.members:
+                    await self.water_ch[guild].send(f"{water_role.mention}")
+
+    def cog_unload(self):
+        print("Unloading Study cog.")
+        self.update_pomos.cancel()
+        self.water_ping.cancel()
+        self.remind_objective.cancel()
+        print("Study cog loops cancelled.")
 
 
 def setup(bot):
