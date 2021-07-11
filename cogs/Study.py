@@ -14,6 +14,15 @@ pomo_channel_regex = ["^(\d+)-(\d+)-(\d+) \((\d+)\/(\d+)\) (w|b|B) \|{2} (\d+)m 
 alarm_ring_file = "./audio/alarm_classic.mp3"
 
 
+class PomoGuild:
+    def __init__(self, guild):
+        self.guild = guild
+        self.first_time = True
+
+    def __repr__(self):
+        return f"Guild: {self.guild.name} | first_time: {self.first_time}"
+
+
 class PomoConfig:
     def __init__(self, ch_name):
         configs, self.size = self.get_configs(ch_name)
@@ -26,6 +35,36 @@ class PomoConfig:
             # state_position = 2
             self.worktime, self.shortbreak, \
                 self.state, self.timeleft = configs
+
+    def proceed(self):  # return True if there is state change, False otherwise
+        self.timeleft -= 5
+        if self.timeleft == 0:
+            if self.state == 'w':
+                if self.size == 7:
+                    self.numpomo += 1
+                    if self.numpomo < self.maxpomo:
+                        self.timeleft = self.shortbreak  # start shortbreak
+                        self.state = 'b'
+                    else:
+                        self.numpomo = 0
+                        self.timeleft = self.longbreak  # start longbreak
+                        self.state = 'B'
+                elif self.size == 4:
+                    self.timeleft = self.shortbreak  # start shortbreak
+                    self.state = 'b'
+            elif self.state in ['b', 'B']:
+                self.timeleft = self.worktime  # start worktime
+                self.state = 'w'
+            return True
+        return False
+
+    def to_string(self):
+        # New name construction (size == 7 ex: "25-5-15 (2/4) b || 5m 0s")
+        new_name = f"{self.worktime}-{self.shortbreak}"  # "25-5"
+        if self.size == 7:
+            new_name += f"-{self.longbreak} ({self.numpomo}/{self.maxpomo})"  # "-15 (2/4)"
+        new_name += f" {self.state} || {self.timeleft}m 0s"  # " b || 5m 0s"
+        return new_name
 
     @staticmethod
     def get_configs(ch_name):  # returns (list, int)
@@ -74,14 +113,15 @@ class PomoConfig:
 
         return configs, size
 
+    def __repr__(self):
+        return self.to_string()
+
 
 class Study(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        self.ongoing = []
-        self.pomo_ctg = None
-        self.pomo_channels = []
+        self.ongoing = []  # list of qualified guilds that invoked .startpomos
 
         self.remind_list = {}
         self.objective_ch = {}
@@ -91,48 +131,46 @@ class Study(commands.Cog):
     # -------- pomodoro stuff ----------
     @tasks.loop(minutes=5)
     async def update_pomos(self):
-        for ch in self.pomo_channels:
-            try:
-                cfg = PomoConfig(ch.name)
-            except ValueError:
+        print("----------------------")
+        print(dt.datetime.now())
+        to_delete = []
+        for pomoguild in self.ongoing:
+            if not (pomo_ctg := discord.utils.get(pomoguild.guild.categories, name="POMODOROS")):
+                to_delete.append(pomoguild)
                 continue
-            else:
-                if ch not in self.ongoing:
-                    cfg.timeleft += 5  # to offset when starting for the first time from startpomos()
-                    self.ongoing.append(ch)
-                if ch in self.ongoing and cfg.timeleft > 0:
-                    cfg.timeleft -= 5  # decrease <mins> by 5
 
-                # change state when <mins> is zero
-                if cfg.timeleft == 0:
-                    if cfg.state == 'w':
-                        if cfg.size == 7:  # <work-time> can go to either <short-break> or <long-break>
-                            cfg.numpomo += 1  # completed one pomodoro
-                            if cfg.numpomo < cfg.maxpomo:
-                                cfg.timeleft, cfg.state = cfg.shortbreak, 'b'
-                            else:  # numpomo >= maxpomo
-                                cfg.numpomo = 0  # reset
-                                cfg.timeleft, cfg.state = cfg.longbreak, 'B'  # start long break
-                        else:
-                            cfg.timeleft, cfg.state = cfg.shortbreak, 'b'
-                    else:
-                        cfg.timeleft, cfg.state = cfg.worktime, 'w'
+            pomo_channels = pomo_ctg.channels
+            for ch in pomo_channels:
+                try:
+                    cfg = PomoConfig(ch.name)
+                    print(ch.name, end=" --> ")
+                except ValueError:
+                    continue
+                else:
+                    if pomoguild.first_time:
+                        cfg.timeleft += 5  # to offset when starting for the first time from startpomos()
+                    if cfg.timeleft > 0:
+                        if cfg.proceed():
+                            if ch.members:
+                                await asyncio.sleep(.5)
+                                vclient = await ch.connect()
+                                vclient.play(discord.FFmpegPCMAudio(alarm_ring_file))
+                                while True:
+                                    await asyncio.sleep(.5)
+                                    if not vclient.is_playing():
+                                        await vclient.disconnect()
+                                        break
 
-                    if ch.members:  # voice channel must have a user connected
-                        vclient = await ch.connect()
-                        vclient.play(discord.FFmpegPCMAudio(alarm_ring_file))
-                        while True:  # wait until audio is done playing
-                            await asyncio.sleep(.1)
-                            if not vclient.is_playing():
-                                await vclient.disconnect()
-                                break
+                    await ch.edit(name=cfg.to_string())
+                    print(cfg.to_string())
+                await asyncio.sleep(.5)
 
-                # New name construction (size == 7 ex: "25-5-15 (2/4) b || 5m 0s")
-                new_name = f"{cfg.worktime}-{cfg.shortbreak}"  # "25-5"
-                if cfg.size == 7:
-                    new_name += f"-{cfg.longbreak} ({cfg.numpomo}/{cfg.maxpomo})"  # "-15 (2/4)"
-                new_name += f" {cfg.state} || {cfg.timeleft}m 0s"  # " b || 5m 0s"
-                await ch.edit(name=new_name)
+            if pomoguild.first_time:
+                pomoguild.first_time = False
+            await asyncio.sleep(.5)
+
+        for guild in to_delete:
+            del self.ongoing[guild]
 
     @commands.command()
     async def startpomos(self, ctx):
@@ -146,42 +184,31 @@ class Study(commands.Cog):
         w/ long breaks: `25-5-15 (0/4) w || 25m 0s`
         w/o long breaks: `50-10 w || 50m 0s`
         """
-        if self.ongoing:
+        if ctx.guild in self.ongoing:
             return await ctx.send("Study sessions have already started.")
         else:
-            if self.update_pomos.is_running():  # for restarting
-                self.update_pomos.cancel()
-
-            self.pomo_ctg = discord.utils.get(ctx.guild.categories, name="POMODOROS")
-            if self.pomo_ctg is None:
-                return await ctx.send("No category channel named 'POMODOROS' found.")
-
-            for c in self.pomo_ctg.channels:
-                try:
-                    if PomoConfig.get_configs(c.name):
-                        self.pomo_channels.append(c)
-                except ValueError:
-                    continue
-
-            # start loop
-            self.update_pomos.start()
+            self.ongoing.append(PomoGuild(ctx.guild))
+            if not self.update_pomos.is_running():
+                self.update_pomos.start()
             await ctx.send("Pomodoros Started")
 
     @commands.command()
     async def restartpomos(self, ctx):
         """Resets the bot's list of registered pomodoro channels and calls `startpomos` command"""
-        self.ongoing = []
-        self.pomo_channels = []
-        await self.startpomos()
+        await self.stoppomos(ctx)
+        await self.startpomos(ctx)
 
     @commands.command()
     async def stoppomos(self, ctx):
         """Stops timers of pomodoro channels"""
-        if self.update_pomos.is_running():
-            self.update_pomos.cancel()
-            await ctx.send("Pomodoro timers have been stopped.")
-        else:
+        try:
+            for pomoguild in self.ongoing:
+                if pomoguild.guild == ctx.guild:
+                    self.ongoing.remove(ctx.guild)
+        except ValueError:
             await ctx.send("Timers are already stopped.")
+        else:
+            await ctx.send("Pomodoro timers have been stopped.")
     # ---------------------------
 
     # ---------- mini reminder ----------
@@ -274,6 +301,27 @@ class Study(commands.Cog):
             if water_role := discord.utils.get(guild.roles, name="water-ping"):
                 if not water_role.members:
                     await self.water_ch[guild].send(f"{water_role.mention}")
+
+    @commands.command(aliases=["ongoing"])
+    @commands.is_owner()
+    async def ongoing_pomos(self, ctx):
+        print("------------------------------")
+        print(dt.datetime.now())
+        for pomoguild in self.ongoing:
+            print(pomoguild)
+        if self.update_pomos.is_running():
+            print("update_pomos is running.")
+        else:
+            print("update_pomos is NOT running.")
+        if self.water_ping.is_running():
+            print("water_ping is running.")
+        else:
+            print("water_ping is NOT running.")
+        if self.remind_objective.is_running():
+            print("remind_objective is running.")
+        else:
+            print("remind_objective is NOT running.")
+        print("------------------------------")
 
     def cog_unload(self):
         print("Unloading Study cog.")

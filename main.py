@@ -1,4 +1,6 @@
 import os
+
+import discord
 from discord.ext import commands
 from help import Help
 
@@ -32,6 +34,23 @@ def main():
     async def on_command_error(ctx, error):
         if isinstance(error, commands.CommandNotFound):
             await ctx.send(f"Invalid Command:\n{error}")
+
+    @bot.command()
+    async def join(ctx):
+        await ctx.author.voice.channel.connect()
+
+    @bot.command()
+    async def playfile(ctx, file):
+        if vclient := ctx.guild.voice_client:
+            audio_path = "./audio/"
+            vclient.play(discord.FFmpegPCMAudio(audio_path + file))
+
+    @bot.command()
+    async def leave(ctx):
+        try:
+            await ctx.guild.voice_client.disconnect()
+        except AttributeError:
+            await ctx.send("I am not connected in any voice channel in this server.")
 
     @bot.command()
     async def ping(ctx):
