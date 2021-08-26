@@ -1,5 +1,4 @@
 import os
-
 import discord
 from discord.ext import commands
 from help import Help
@@ -37,7 +36,10 @@ def main():
 
     @bot.command()
     async def join(ctx):
-        await ctx.author.voice.channel.connect()
+        try:
+            await ctx.author.voice.channel.connect()
+        except Exception as e:
+            print(e)
 
     @bot.command()
     async def playfile(ctx, file):
