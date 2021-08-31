@@ -1,6 +1,7 @@
 import discord
 import asyncio
 from discord.ext import commands
+from ..db import db
 extension_error_msgs = {
     1: lambda extension: f"'{extension}' cog not found.",
     2: lambda extension: f"'{extension}' cog not loaded.",
@@ -12,13 +13,6 @@ extension_error_msgs = {
 class OwnerCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
-    @commands.command()
-    @commands.is_owner()
-    async def changeprefix(self, ctx, prefix):
-        with open('prefix', 'w') as pf:
-            pf.write(f'{prefix}')
-            await ctx.send(f'Prefix changed to: {prefix}')
 
     def extension_cmds(self, cmd, extension):
         try:
@@ -41,7 +35,7 @@ class OwnerCommands(commands.Cog):
         else:
             return 0
 
-    @commands.command()
+    @commands.command(hidden=True)
     @commands.is_owner()
     async def load(self, ctx, *, extension):
         result = self.extension_cmds("load", extension)
@@ -50,7 +44,7 @@ class OwnerCommands(commands.Cog):
         else:
             await ctx.send(result)
 
-    @commands.command()
+    @commands.command(hidden=True)
     @commands.is_owner()
     async def unload(self, ctx, *, extension):
         if extension != "Owner_Commands":
@@ -62,7 +56,7 @@ class OwnerCommands(commands.Cog):
         else:
             await ctx.send("Owner Commands should not be unloaded.")
 
-    @commands.command()
+    @commands.command(hidden=True)
     @commands.is_owner()
     async def reload(self, ctx, *, extension):
         result = self.extension_cmds("reload", extension)
@@ -71,12 +65,12 @@ class OwnerCommands(commands.Cog):
         else:
             await ctx.send(result)
 
-    @commands.command(name="bot_act")
+    @commands.command(name="bot_act", hidden=True)
     @commands.is_owner()
     async def botactivity(self, ctx, *, activity=''):
         await self.bot.change_presence(activity=discord.Game(activity))
 
-    @commands.command(name="bot_status")
+    @commands.command(name="bot_status", hidden=True)
     @commands.is_owner()
     async def botstatus(self, ctx, *, status="online"):
         if status == "online":
@@ -90,7 +84,7 @@ class OwnerCommands(commands.Cog):
         else:
             await ctx.send(f"Invalid status: {status}")
 
-    @commands.command()
+    @commands.command(hidden=True)
     @commands.is_owner()
     async def closebot(self, ctx):
         await ctx.send("Going offline.")
@@ -98,7 +92,7 @@ class OwnerCommands(commands.Cog):
         await asyncio.sleep(5)
         await self.bot.close()
 
-    @commands.command()
+    @commands.command(hidden=True)
     @commands.is_owner()
     async def audiosurprise(self, ctx, guild_id, ch_id, file):  # only made this for surprise rick rolling and other
         guild = discord.utils.get(self.bot.guilds, id=int(guild_id))
@@ -110,6 +104,17 @@ class OwnerCommands(commands.Cog):
             if not vc.is_playing():
                 await vc.disconnect()
                 break
+
+    @commands.command(hidden=True)
+    @commands.is_owner()
+    async def dbcommit(self, ctx):
+        db.commit()
+        print(True)
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        if not self.bot.ready:
+            self.bot.cogs_ready.ready_up("Owner_Commands")
 
 
 def setup(bot):
